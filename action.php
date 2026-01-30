@@ -12,10 +12,12 @@ class action_plugin_ragasker extends DokuWiki_Action_Plugin {
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['ragasker_widget']) && !empty($_POST['prompt'])) {
             $prompt = trim($_POST['prompt']);
             $step = isset($_POST['step']) ? intval($_POST['step']) : 1;
+            // 多语言文本获取函数
+            $L = function($key) { return $this->getLang($key); };
             $serverUrl = $this->getConf('server_url');
             $apiKey = $this->getConf('apikey');
             if (empty($apiKey)) {
-                $this->sendJson(['ragasker_response' => '<span style="color:red">请先在插件配置中设置 OpenAI API 密钥</span>', 'step' => $step]);
+                $this->sendJson(['ragasker_response' => '<span style="color:red">' . hsc($L('no_apikey')) . '</span>', 'step' => $step]);
                 exit;
             }
             $model = $this->getConf('model');
@@ -25,11 +27,11 @@ class action_plugin_ragasker extends DokuWiki_Action_Plugin {
 
             // 步骤1：关键词提取
             if ($step === 1) {
-                $keywordPrompt = "请从以下问题中提取3-5个最重要的关键词，返回一个用空格分隔的关键词列表，以优先度排列，不要解释：\n" . $prompt;
+                $keywordPrompt = $L('keyword_prompt') . "\n" . $prompt;
                 $requestData1 = [
                     'model' => $model,
                     'messages' => [
-                        ['role' => 'system', 'content' => '你是一个关键词提取助手。'],
+                        ['role' => 'system', 'content' => $L('keyword_system')],
                         ['role' => 'user', 'content' => $keywordPrompt]
                     ],
                     'max_tokens' => $maxTokens,
@@ -40,10 +42,12 @@ class action_plugin_ragasker extends DokuWiki_Action_Plugin {
                 if (isset($response1['choices'][0]['message']['content'])) {
                     $keywords = trim($response1['choices'][0]['message']['content']);
                 } else {
-                    $this->sendJson(['ragasker_response' => '<b>步骤1失败：</b>未能提取关键词', 'step' => 1]);
+                    $this->sendJson(['ragasker_response' => '<span style="color:red">' . hsc($L('error_api')) . '</span>', 'step' => 1]);
                     exit;
                 }
-                $step1msg = "<b>步骤1：提取关键词</b><br>用户问题：<code>" . hsc($prompt) . "</code><br>提取结果：<code>" . hsc($keywords) . "</code><br>";
+                $step1msg = "<b>" . hsc(sprintf($L('step_title'), 1, $L('step_extracting'))) . "</b><br>"
+                    . hsc(sprintf($L('user_question'), $prompt)) . "<br>"
+                    . hsc(sprintf($L('result'), $keywords)) . "<br>";
                 $this->sendJson(['ragasker_response' => $step1msg, 'step' => 1, 'keywords' => $keywords]);
                 exit;
             }
@@ -55,10 +59,9 @@ class action_plugin_ragasker extends DokuWiki_Action_Plugin {
                 $searchResults = ft_pageSearch($keywords, $highlight);
                 $processor = new SearchHelper();
 
-                // 新增：如果搜索结果为空，循环去掉最后一个关键词重试，直到没有关键词
                 while ((!is_array($searchResults) || count($searchResults) === 0) && strpos($keywords, ' ') !== false) {
                     $keywordArr = explode(' ', $keywords);
-                    array_pop($keywordArr); // 去掉最后一个
+                    array_pop($keywordArr);
                     $keywords = trim(implode(' ', $keywordArr));
                     if ($keywords === '') break;
                     $searchResults = ft_pageSearch($keywords, $highlight);
@@ -77,15 +80,15 @@ class action_plugin_ragasker extends DokuWiki_Action_Plugin {
                     }
                     $searchList .= '</ul>';
                 } else {
-                    $searchList = '<span style="color:orange">未找到相关页面</span>';
+                    $searchList = '<span style="color:orange">' . hsc($L('error_noresult')) . '</span>';
                 }
-                $step2msg = "<b>步骤2：关键词搜索</b><br>关键词：<code>" . hsc($keywords) . "</code><br>搜索结果：" . $searchList . "<br>";
-                // 传递内容列表用于下一步
+                $step2msg = "<b>" . hsc(sprintf($L('step_title'), 2, $L('step_searching'))) . "</b><br>"
+                    . hsc(sprintf($L('keywords'), $keywords)) . "<br>"
+                    . hsc(sprintf($L('search_result'), '')) . $searchList . "<br>";
                 $this->sendJson([
                     'ragasker_response' => $step2msg,
                     'step' => 2,
                     'keywords' => $keywords,
-                    // 以 JSON 字符串返回，便于前端直接传递
                     'linkList' => json_encode($linkList),
                     'contentList' => json_encode($contentList)
                 ]);
@@ -103,17 +106,17 @@ class action_plugin_ragasker extends DokuWiki_Action_Plugin {
                     foreach ($contentList as $idx => $item) {
                         $title = $linkList[$idx]['title'];
                         $summary = $item['summary'];
-                        $pageListArr[] = "【" . $title . "】摘要：" . $summary;
+                        $pageListArr[] = sprintf($L('page_summary'), $title, $summary);
                     }
                     $pageListStr = implode("\n", $pageListArr);
                 } else {
-                    $pageListStr = '无相关页面';
+                    $pageListStr = $L('error_noresult');
                 }
-                $summaryPrompt = "请根据以下页面列表，结合用户原始问题，简要总结并回答用户的问题。\n\n用户问题：" . $prompt . "\n\n页面列表：\n" . $pageListStr;
+                $summaryPrompt = $L('summary_prompt') . "\n\n" . sprintf($L('user_question'), $prompt) . "\n\n" . $L('page_list') . "\n" . $pageListStr;
                 $requestData2 = [
                     'model' => $model,
                     'messages' => [
-                        ['role' => 'system', 'content' => '你是一个dokuwiki知识库问答助手。'],
+                        ['role' => 'system', 'content' => $L('summary_system')],
                         ['role' => 'user', 'content' => $summaryPrompt]
                     ],
                     'max_tokens' => $maxTokens,
@@ -124,11 +127,11 @@ class action_plugin_ragasker extends DokuWiki_Action_Plugin {
                 if (isset($response2['choices'][0]['message']['content'])) {
                     $finalAnswer = $this->formatResponse($response2['choices'][0]['message']['content']);
                 } else {
-                    $finalAnswer = '<span style="color:red">API返回格式异常</span>';
+                    $finalAnswer = '<span style="color:red">' . hsc($L('error_format')) . '</span>';
                 }
-                $step3msg = "<b>步骤3：AI总结回答</b><br>";
+                $step3msg = "<b>" . hsc(sprintf($L('step_title'), 3, $L('step_summarizing'))) . "</b><br>";
                 if ($this->getConf('verbose')) {
-                    $step3msg .= "<details><summary>提示词（点击展开）</summary><pre style='white-space:pre-wrap'>" . hsc($summaryPrompt) . "</pre></details><br>";
+                    $step3msg .= "<details><summary>" . hsc($L('prompt_detail')) . "</summary><pre style='white-space:pre-wrap'>" . hsc($summaryPrompt) . "</pre></details><br>";
                 }
                 $step3msg .= $finalAnswer;
                 $this->sendJson(['ragasker_response' => $step3msg, 'step' => 3]);

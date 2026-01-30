@@ -24,8 +24,8 @@ class syntax_plugin_ragasker extends DokuWiki_Syntax_Plugin {
         $btnId = $uniqid . '_btn';
         $resultId = $uniqid . '_result';
         $renderer->doc .= '<div class="openai-widget" style="border:1px solid #ccc;padding:10px;margin:10px 0;">';
-        $renderer->doc .= '<input type="text" id="' . hsc($inputId) . '" style="width:60%;" placeholder="请输入你的问题..." /> ';
-        $renderer->doc .= '<button id="' . hsc($btnId) . '">提交</button>';
+        $renderer->doc .= '<input type="text" id="' . hsc($inputId) . '" style="width:60%;" placeholder="' . hsc($this->getLang('input_placeholder')) . '" /> ';
+        $renderer->doc .= '<button id="' . hsc($btnId) . '">' . hsc($this->getLang('submit_btn')) . '</button>';
         $renderer->doc .= '<div id="' . hsc($resultId) . '" style="margin-top:10px;"></div>';
         $renderer->doc .= '</div>';
         $renderer->doc .= '<script type="text/javascript">
@@ -38,8 +38,22 @@ class syntax_plugin_ragasker extends DokuWiki_Syntax_Plugin {
             var lastKeywords = "";
             var lastLinkList = null;
             var lastContentList = null;
+            // 多语言文本
+            var i18n = {
+                step1: "' . hsc(sprintf($this->getLang('step_title'), 1, $this->getLang('step_extracting'))) . '",
+                step2: "' . hsc(sprintf($this->getLang('step_title'), 2, $this->getLang('step_searching'))) . '",
+                step3: "' . hsc(sprintf($this->getLang('step_title'), 3, $this->getLang('step_summarizing'))) . '",
+                api_error: "' . hsc($this->getLang('error_api')) . '",
+                parse_error: "' . hsc($this->getLang('error_parse')) . '",
+                request_error: "' . hsc($this->getLang('error_request')) . '",
+                network_error: "' . hsc($this->getLang('error_network')) . '",
+                stop: "' . hsc($this->getLang('stop_btn')) . '",
+                submit: "' . hsc($this->getLang('submit_btn')) . '",
+                stopped: "' . hsc($this->getLang('stopped')) . '",
+                input_empty: "' . hsc($this->getLang('error_input_empty')) . '"
+            };
             function step1() {
-                result.innerHTML = "<em>步骤1：正在提取关键词...</em>";
+                result.innerHTML = "<em>" + i18n.step1 + "</em>";
                 xhr = new XMLHttpRequest();
                 xhr.open("POST", DOKU_BASE + "lib/exe/ajax.php", true);
                 xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
@@ -47,6 +61,7 @@ class syntax_plugin_ragasker extends DokuWiki_Syntax_Plugin {
                     if(xhr.readyState === 4) {
                         if(!running) return;
                         if(xhr.status === 200) {
+                            console.log(xhr.responseText);
                             try {
                                 var resp = JSON.parse(xhr.responseText);
                                 if(resp && resp.ragasker_response) {
@@ -54,31 +69,31 @@ class syntax_plugin_ragasker extends DokuWiki_Syntax_Plugin {
                                     lastKeywords = resp.keywords || "";
                                     if(resp.step === 1 && lastKeywords) step2();
                                 } else {
-                                    result.innerHTML = "<span style=\'color:red\'>API返回异常</span>";
+                                    result.innerHTML = "<span style=\'color:red\'>" + i18n.api_error + "</span>";
                                     running = false;
-                                    btn.innerText = "提交";
+                                    btn.innerText = i18n.submit;
                                 }
                             } catch(e) {
-                                result.innerHTML = "<span style=\'color:red\'>解析响应失败</span>";
+                                result.innerHTML = "<span style=\'color:red\'>" + i18n.parse_error + "</span>";
                                 running = false;
-                                btn.innerText = "提交";
+                                btn.innerText = i18n.submit;
                             }
                         } else {
-                            result.innerHTML = "<span style=\'color:red\'>请求失败("+xhr.status+")</span>";
+                            result.innerHTML = "<span style=\'color:red\'>" + i18n.request_error + "("+xhr.status+")</span>";
                             running = false;
-                            btn.innerText = "提交";
+                            btn.innerText = i18n.submit;
                         }
                     }
                 };
                 xhr.onerror = function(e) {
-                    result.innerHTML = "<span style=\"color:red\">网络错误</span>";
+                    result.innerHTML = "<span style=\"color:red\">" + i18n.network_error + "</span>";
                     running = false;
-                    btn.innerText = "提交";
+                    btn.innerText = i18n.submit;
                 };
                 xhr.send("call=ragasker_generate&ragasker_widget=1&prompt=" + encodeURIComponent(input.value) + "&step=1");
             }
             function step2() {
-                result.innerHTML += "<br><em>步骤2：正在搜索页面...</em>";
+                result.innerHTML += "<br><em>" + i18n.step2 + "</em>";
                 xhr = new XMLHttpRequest();
                 xhr.open("POST", DOKU_BASE + "lib/exe/ajax.php", true);
                 xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
@@ -90,31 +105,30 @@ class syntax_plugin_ragasker extends DokuWiki_Syntax_Plugin {
                                 var resp = JSON.parse(xhr.responseText);
                                 if(resp && resp.ragasker_response) {
                                     result.innerHTML += "<hr>" + resp.ragasker_response;
-                                    // 这里 linkList/contentList 是 JSON 字符串
                                     lastLinkList = resp.linkList;
                                     lastContentList = resp.contentList;
                                     if(resp.step === 2 && lastLinkList && lastContentList) step3();
                                 } else {
-                                    result.innerHTML += "<span style=\'color:red\'>API返回异常</span>";
+                                    result.innerHTML += "<span style=\'color:red\'>" + i18n.api_error + "</span>";
                                     running = false;
-                                    btn.innerText = "提交";
+                                    btn.innerText = i18n.submit;
                                 }
                             } catch(e) {
-                                result.innerHTML += "<span style=\'color:red\'>解析响应失败</span>";
+                                result.innerHTML += "<span style=\'color:red\'>" + i18n.parse_error + "</span>";
                                 running = false;
-                                btn.innerText = "提交";
+                                btn.innerText = i18n.submit;
                             }
                         } else {
-                            result.innerHTML += "<span style=\'color:red\'>请求失败("+xhr.status+")</span>";
+                            result.innerHTML += "<span style=\'color:red\'>" + i18n.request_error + "("+xhr.status+")</span>";
                             running = false;
-                            btn.innerText = "提交";
+                            btn.innerText = i18n.submit;
                         }
                     }
                 };
                 xhr.onerror = function(e) {
-                    result.innerHTML += "<span style=\"color:red\">网络错误</span>";
+                    result.innerHTML += "<span style=\"color:red\">" + i18n.network_error + "</span>";
                     running = false;
-                    btn.innerText = "提交";
+                    btn.innerText = i18n.submit;
                 };
                 xhr.send(
                     "call=ragasker_generate&ragasker_widget=1&prompt=" + encodeURIComponent(input.value) +
@@ -122,7 +136,7 @@ class syntax_plugin_ragasker extends DokuWiki_Syntax_Plugin {
                 );
             }
             function step3() {
-                result.innerHTML += "<hr><em>步骤3：AI总结回答...</em>";
+                result.innerHTML += "<hr><em>" + i18n.step3 + "</em>";
                 xhr = new XMLHttpRequest();
                 xhr.open("POST", DOKU_BASE + "lib/exe/ajax.php", true);
                 xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
@@ -135,24 +149,23 @@ class syntax_plugin_ragasker extends DokuWiki_Syntax_Plugin {
                                 if(resp && resp.ragasker_response) {
                                     result.innerHTML += "<hr>" + resp.ragasker_response;
                                 } else {
-                                    result.innerHTML += "<span style=\'color:red\'>API返回异常</span>";
+                                    result.innerHTML += "<span style=\'color:red\'>" + i18n.api_error + "</span>";
                                 }
                             } catch(e) {
-                                result.innerHTML += "<span style=\'color:red\'>解析响应失败</span>";
+                                result.innerHTML += "<span style=\'color:red\'>" + i18n.parse_error + "</span>";
                             }
                         } else {
-                            result.innerHTML += "<span style=\'color:red\'>请求失败("+xhr.status+")</span>";
+                            result.innerHTML += "<span style=\'color:red\'>" + i18n.request_error + "("+xhr.status+")</span>";
                         }
                         running = false;
-                        btn.innerText = "提交";
+                        btn.innerText = i18n.submit;
                     }
                 };
                 xhr.onerror = function(e) {
-                    result.innerHTML += "<span style=\"color:red\">网络错误</span>";
+                    result.innerHTML += "<span style=\"color:red\">" + i18n.network_error + "</span>";
                     running = false;
-                    btn.innerText = "提交";
+                    btn.innerText = i18n.submit;
                 };
-                // 这里 linkList/contentList 需保证为 JSON 字符串
                 xhr.send(
                     "call=ragasker_generate&ragasker_widget=1&prompt=" + encodeURIComponent(input.value) +
                     "&step=3&keywords=" + encodeURIComponent(lastKeywords) +
@@ -163,17 +176,16 @@ class syntax_plugin_ragasker extends DokuWiki_Syntax_Plugin {
             if(btn && input && result) {
                 btn.addEventListener("click", function() {
                     if(running) {
-                        // 终止
                         running = false;
                         if(xhr) xhr.abort();
-                        btn.innerText = "提交";
-                        result.innerHTML += "<br><span style=\'color:orange\'>已终止</span>";
+                        btn.innerText = i18n.submit;
+                        result.innerHTML += "<br><span style=\'color:orange\'>" + i18n.stopped + "</span>";
                         return;
                     }
                     var prompt = input.value;
-                    if(!prompt) { result.innerHTML = "<span style=\'color:red\'>请输入内容</span>"; return; }
+                    if(!prompt) { result.innerHTML = "<span style=\'color:red\'>" + i18n.input_empty + "</span>"; return; }
                     running = true;
-                    btn.innerText = "终止";
+                    btn.innerText = i18n.stop;
                     lastKeywords = "";
                     lastLinkList = null;
                     lastContentList = null;
