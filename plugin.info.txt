@@ -3,4 +3,4 @@ author  Charles Chan
 date    2026-01-29
 name    RagAsker plugin
 desc    Knowledge based Q&A via LLM
-url     https://github.com/zeerd/dokuwiki_ragasker
+url     https://github.com/zeerd/dokuwiki-plugin-ragasker
