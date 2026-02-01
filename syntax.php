@@ -9,24 +9,58 @@ class syntax_plugin_ragasker extends DokuWiki_Syntax_Plugin {
     public function connectTo($mode) {
         // 多种语法支持
         $this->Lexer->addSpecialPattern('~~RAGASKER~~', $mode, 'plugin_ragasker');
+        // 用于测试搜索功能的语法
+        $this->Lexer->addSpecialPattern('~~RAGASKER:Search:.*~~', $mode, 'plugin_ragasker');
     }
 
     public function handle($match, $state, $pos, Doku_Handler $handler) {
         // 只传递唯一ID用于渲染
         $uniqid = uniqid('ragasker_', true);
-        return [$uniqid, null];
+        if (preg_match('/~~RAGASKER:Search:([A-Za-z0-9_]+)~~/', $match, $m)) {
+            // 解析参数
+            $param = $m[1];
+            return [$uniqid, 'searcher', $param];
+        }
+        return [$uniqid, 'asker', null];
     }
 
     public function render($mode, Doku_Renderer $renderer, $data) {
         if($mode !== 'xhtml') return false;
-        list($uniqid, $_) = $data;
+        list($uniqid, $type, $param) = $data;
+        if ($type === 'searcher') {
+            return $this->renderSearcher($renderer, $param);
+        } else {
+            return $this->renderAsker($renderer, $uniqid);
+        }
+    }
+
+    private function renderSearcher($renderer, $param) {
+        $processor = new SearchHelper();
+        $lists = $processor->exampleUsage($param);
+        $linkList = $lists['links'];
+        $contentList = $lists['contents'];
+        $searchList = '';
+        if (is_array($linkList) && count($linkList) > 0) {
+            $searchList = '<ul>';
+            foreach ($linkList as $idx => $link) {
+                $url = wl($link['id']);
+                $searchList .= '<li><a href="' . hsc($url) . '" target="_blank">' . hsc($link['title']) . '</a>';
+                $searchList .= '</li>';
+            }
+            $searchList .= '</ul>';
+        }
+        $renderer->doc .= $searchList;
+        return true;
+    }
+
+    private function renderAsker($renderer, $uniqid) {
         $inputId = $uniqid . '_input';
         $btnId = $uniqid . '_btn';
         $resultId = $uniqid . '_result';
         $renderer->doc .= '<div class="openai-widget" style="border:1px solid #ccc;padding:10px;margin:10px 0;">';
+        $renderer->doc .= '<div id="' . hsc($resultId) . '" style="margin-top:10px;"></div>';
         $renderer->doc .= '<input type="text" id="' . hsc($inputId) . '" style="width:60%;" placeholder="' . hsc($this->getLang('input_placeholder')) . '" /> ';
         $renderer->doc .= '<button id="' . hsc($btnId) . '">' . hsc($this->getLang('submit_btn')) . '</button>';
-        $renderer->doc .= '<div id="' . hsc($resultId) . '" style="margin-top:10px;"></div>';
         $renderer->doc .= '</div>';
         $renderer->doc .= '<script type="text/javascript">
         (function(){
@@ -52,8 +86,29 @@ class syntax_plugin_ragasker extends DokuWiki_Syntax_Plugin {
                 stopped: "' . hsc($this->getLang('stopped')) . '",
                 input_empty: "' . hsc($this->getLang('error_input_empty')) . '"
             };
-            function step1() {
-                result.innerHTML = "<em>" + i18n.step1 + "</em>";
+            function setHtml(html) {
+                result.innerHTML = html;
+            }
+            function appendHtml(html) {
+                result.innerHTML += html;
+            }
+            function stopRunning() {
+                running = false;
+                btn.innerText = i18n.submit;
+            }
+            function showError(msg, append, stop) {
+                var html = "<span style=\'color:red\'>" + msg + "</span>";
+                if(append) {
+                    appendHtml(html);
+                } else {
+                    setHtml(html);
+                }
+                if(stop) stopRunning();
+            }
+            function sendStep(options) {
+                if(options.preHtml !== null) {
+                    appendHtml(options.preHtml);
+                }
                 xhr = new XMLHttpRequest();
                 xhr.open("POST", DOKU_BASE + "lib/exe/ajax.php", true);
                 xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
@@ -61,117 +116,81 @@ class syntax_plugin_ragasker extends DokuWiki_Syntax_Plugin {
                     if(xhr.readyState === 4) {
                         if(!running) return;
                         if(xhr.status === 200) {
-                            console.log(xhr.responseText);
                             try {
                                 var resp = JSON.parse(xhr.responseText);
                                 if(resp && resp.ragasker_response) {
-                                    result.innerHTML = resp.ragasker_response;
-                                    lastKeywords = resp.keywords || "";
-                                    if(resp.step === 1 && lastKeywords) step2();
+                                    options.onSuccess(resp);
                                 } else {
-                                    result.innerHTML = "<span style=\'color:red\'>" + i18n.api_error + "</span>";
-                                    running = false;
-                                    btn.innerText = i18n.submit;
+                                    showError(i18n.api_error, options.errorAppend, options.stopOnError);
                                 }
                             } catch(e) {
-                                result.innerHTML = "<span style=\'color:red\'>" + i18n.parse_error + "</span>";
-                                running = false;
-                                btn.innerText = i18n.submit;
+                                showError(i18n.parse_error, options.errorAppend, options.stopOnError);
                             }
                         } else {
-                            result.innerHTML = "<span style=\'color:red\'>" + i18n.request_error + "("+xhr.status+")</span>";
-                            running = false;
-                            btn.innerText = i18n.submit;
+                            showError(i18n.request_error + "(" + xhr.status + ")", options.errorAppend, options.stopOnError);
+                        }
+                        if(options.finalize) {
+                            stopRunning();
                         }
                     }
                 };
                 xhr.onerror = function(e) {
-                    result.innerHTML = "<span style=\"color:red\">" + i18n.network_error + "</span>";
-                    running = false;
-                    btn.innerText = i18n.submit;
+                    showError(i18n.network_error, options.errorAppend, options.stopOnError);
+                    if(options.finalize) {
+                        stopRunning();
+                    }
                 };
-                xhr.send("call=ragasker_generate&ragasker_widget=1&prompt=" + encodeURIComponent(input.value) + "&step=1");
+                xhr.send(options.payload);
+            }
+            function step1() {
+                sendStep({
+                    preHtml: "<hr><em>" + i18n.step1 + "</em>",
+                    errorAppend: false,
+                    stopOnError: true,
+                    finalize: false,
+                    payload: "call=ragasker_generate&ragasker_widget=1&prompt=" + encodeURIComponent(input.value) + "&step=1",
+                    onSuccess: function(resp) {
+                        console.log(xhr.responseText);
+                        appendHtml("<hr>" + resp.ragasker_response);
+                        lastKeywords = resp.keywords || "";
+                        if(resp.step === 1 && lastKeywords) step2();
+                    }
+                });
             }
             function step2() {
-                result.innerHTML += "<br><em>" + i18n.step2 + "</em>";
-                xhr = new XMLHttpRequest();
-                xhr.open("POST", DOKU_BASE + "lib/exe/ajax.php", true);
-                xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
-                xhr.onreadystatechange = function() {
-                    if(xhr.readyState === 4) {
-                        if(!running) return;
-                        if(xhr.status === 200) {
-                            try {
-                                var resp = JSON.parse(xhr.responseText);
-                                if(resp && resp.ragasker_response) {
-                                    result.innerHTML += "<hr>" + resp.ragasker_response;
-                                    lastLinkList = resp.linkList;
-                                    lastContentList = resp.contentList;
-                                    if(resp.step === 2 && lastLinkList && lastContentList) step3();
-                                } else {
-                                    result.innerHTML += "<span style=\'color:red\'>" + i18n.api_error + "</span>";
-                                    running = false;
-                                    btn.innerText = i18n.submit;
-                                }
-                            } catch(e) {
-                                result.innerHTML += "<span style=\'color:red\'>" + i18n.parse_error + "</span>";
-                                running = false;
-                                btn.innerText = i18n.submit;
-                            }
-                        } else {
-                            result.innerHTML += "<span style=\'color:red\'>" + i18n.request_error + "("+xhr.status+")</span>";
-                            running = false;
-                            btn.innerText = i18n.submit;
-                        }
+                sendStep({
+                    preHtml: "<br><em>" + i18n.step2 + "</em>",
+                    errorAppend: true,
+                    stopOnError: true,
+                    finalize: false,
+                    payload: "call=ragasker_generate&ragasker_widget=1&prompt=" + encodeURIComponent(input.value) +
+                        "&step=2&keywords=" + encodeURIComponent(lastKeywords),
+                    onSuccess: function(resp) {
+                        appendHtml("<hr>" + resp.ragasker_response);
+                        lastLinkList = resp.linkList;
+                        lastContentList = resp.contentList;
+                        if(resp.step === 2 && lastLinkList && lastContentList) step3();
                     }
-                };
-                xhr.onerror = function(e) {
-                    result.innerHTML += "<span style=\"color:red\">" + i18n.network_error + "</span>";
-                    running = false;
-                    btn.innerText = i18n.submit;
-                };
-                xhr.send(
-                    "call=ragasker_generate&ragasker_widget=1&prompt=" + encodeURIComponent(input.value) +
-                    "&step=2&keywords=" + encodeURIComponent(lastKeywords)
-                );
+                });
             }
             function step3() {
-                result.innerHTML += "<hr><em>" + i18n.step3 + "</em>";
-                xhr = new XMLHttpRequest();
-                xhr.open("POST", DOKU_BASE + "lib/exe/ajax.php", true);
-                xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
-                xhr.onreadystatechange = function() {
-                    if(xhr.readyState === 4) {
-                        if(!running) return;
-                        if(xhr.status === 200) {
-                            try {
-                                var resp = JSON.parse(xhr.responseText);
-                                if(resp && resp.ragasker_response) {
-                                    result.innerHTML += "<hr>" + resp.ragasker_response;
-                                } else {
-                                    result.innerHTML += "<span style=\'color:red\'>" + i18n.api_error + "</span>";
-                                }
-                            } catch(e) {
-                                result.innerHTML += "<span style=\'color:red\'>" + i18n.parse_error + "</span>";
-                            }
-                        } else {
-                            result.innerHTML += "<span style=\'color:red\'>" + i18n.request_error + "("+xhr.status+")</span>";
+                sendStep({
+                    preHtml: "<hr><em>" + i18n.step3 + "</em>",
+                    errorAppend: true,
+                    stopOnError: false,
+                    finalize: true,
+                    payload: "call=ragasker_generate&ragasker_widget=1&prompt=" + encodeURIComponent(input.value) +
+                        "&step=3&keywords=" + encodeURIComponent(lastKeywords) +
+                        "&linkList=" + encodeURIComponent(lastLinkList) +
+                        "&contentList=" + encodeURIComponent(lastContentList) +
+                        "&messages=" + encodeURIComponent(window.ragasker_lastMessages ? JSON.stringify(window.ragasker_lastMessages) : "[]"),
+                    onSuccess: function(resp) {
+                        appendHtml("<hr>" + resp.ragasker_response);
+                        if(resp.messages) {
+                            window.ragasker_lastMessages = resp.messages;
                         }
-                        running = false;
-                        btn.innerText = i18n.submit;
                     }
-                };
-                xhr.onerror = function(e) {
-                    result.innerHTML += "<span style=\"color:red\">" + i18n.network_error + "</span>";
-                    running = false;
-                    btn.innerText = i18n.submit;
-                };
-                xhr.send(
-                    "call=ragasker_generate&ragasker_widget=1&prompt=" + encodeURIComponent(input.value) +
-                    "&step=3&keywords=" + encodeURIComponent(lastKeywords) +
-                    "&linkList=" + encodeURIComponent(lastLinkList) +
-                    "&contentList=" + encodeURIComponent(lastContentList)
-                );
+                });
             }
             if(btn && input && result) {
                 btn.addEventListener("click", function() {
@@ -189,7 +208,6 @@ class syntax_plugin_ragasker extends DokuWiki_Syntax_Plugin {
                     lastKeywords = "";
                     lastLinkList = null;
                     lastContentList = null;
-                    result.innerHTML = "";
                     step1();
                 });
             }

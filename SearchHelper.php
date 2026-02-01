@@ -15,7 +15,7 @@ class SearchHelper {
         $contents = [];
 
         foreach ($searchResults as $key => $result) {
-            $normalized = $this->normalizeResult($result, $key);
+            $normalized = $this->normalizeResult($key, $result);
             if (!$normalized) {
                 continue;
             }
@@ -60,29 +60,10 @@ class SearchHelper {
     /**
      * 兼容不同格式的搜索结果
      */
-    private function normalizeResult($result, $key = null) {
+    private function normalizeResult($key, $score = null) {
         // 结果可能是字符串（页面ID）
-        if (is_string($result) && $result !== '') {
-            return ['id' => $result, 'score' => 0];
-        }
-
-        // 结果可能是数组，但键名不一致
-        if (is_array($result)) {
-            if (!empty($result['id'])) {
-                return $result;
-            }
-            if (!empty($result['page'])) {
-                $result['id'] = $result['page'];
-                return $result;
-            }
-            if (!empty($result[0]) && is_string($result[0])) {
-                return ['id' => $result[0], 'score' => $result['score'] ?? 0];
-            }
-        }
-
-        // 结果可能是标量分数，ID 在 key 上
         if (is_string($key) && $key !== '') {
-            return ['id' => $key, 'score' => is_numeric($result) ? $result : 0];
+            return ['id' => $key, 'score' => $score];
         }
 
         return null;
@@ -118,7 +99,8 @@ class SearchHelper {
      */
     public function exampleUsage($searchQuery) {
         // 1. 执行搜索
-        $rawResults = ft_pageSearch($searchQuery);
+        $highlight = false;
+        $rawResults = ft_pageSearch($searchQuery, $highlight);
 
         // 2. 提取两个列表
         $lists = $this->extractLists($rawResults);

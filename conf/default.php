@@ -1,5 +1,5 @@
 <?php
-$conf['server_url'] = 'http://localhost:8000/v1';
+$conf['server_url'] = 'http://localhost:8000';
 $conf['apikey'] = 'None';
 $conf['model'] = 'qwen3-80b';
 $conf['max_tokens'] = 32768;

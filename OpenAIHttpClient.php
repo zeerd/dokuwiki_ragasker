@@ -12,14 +12,14 @@ class OpenAIHttpClient {
      * 发送聊天请求
      */
     public function chatCompletion($params) {
-        return $this->request('/chat/completions', $params);
+        return $this->request('/v1/chat/completions', $params);
     }
 
     /**
      * 发送补全请求
      */
     public function completion($params) {
-        return $this->request('/completions', $params);
+        return $this->request('/v1/completions', $params);
     }
 
     /**
@@ -69,7 +69,7 @@ class OpenAIHttpClient {
      */
     public function streamChatCompletion($params, $callback) {
         $params['stream'] = true;
-        $url = $this->baseUrl . '/chat/completions';
+        $url = $this->baseUrl . '/v1/chat/completions';
 
         $headers = [
             'Content-Type: application/json',
@@ -100,7 +100,7 @@ class OpenAIHttpClient {
      * 获取可用模型列表
      */
     public function listModels() {
-        $url = $this->baseUrl . '/models';
+        $url = $this->baseUrl . '/v1/models';
 
         $headers = [
             'Authorization: Bearer ' . $this->apiKey

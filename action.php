@@ -67,6 +67,39 @@ class action_plugin_ragasker extends DokuWiki_Action_Plugin {
                     $searchResults = ft_pageSearch($keywords, $highlight);
                 }
 
+                if ((!is_array($searchResults) || count($searchResults) === 0) && strpos($keywords, ' ') !== false) {
+                    $keywordArr = explode(' ', $keywords);
+                    while (count($keywordArr) > 1) {
+                        array_shift($keywordArr); // 去掉第一个关键词
+                        $keywords = trim(implode(' ', $keywordArr));
+                        if ($keywords === '') break;
+                        $searchResults = ft_pageSearch($keywords, $highlight);
+                        if (is_array($searchResults) && count($searchResults) > 0) break;
+                    }
+                }
+
+                if ((!is_array($searchResults) || count($searchResults) === 0) && strpos($keywords, ' ') !== false) {
+                    $keywordArr = explode(' ', trim($_POST['keywords'])); // 用原始关键词
+                    $mergedResults = [];
+                    foreach ($keywordArr as $singleKeyword) {
+                        $singleKeyword = trim($singleKeyword);
+                        if ($singleKeyword === '') continue;
+                        $result = ft_pageSearch($singleKeyword, $highlight);
+                        if (is_array($result) && count($result) > 0) {
+                            foreach ($result as $item) {
+                                // 用页面ID去重
+                                if (!isset($mergedResults[$item['id']])) {
+                                    $mergedResults[$item['id']] = $item;
+                                }
+                            }
+                        }
+                    }
+                    if (count($mergedResults) > 0) {
+                        $searchResults = array_values($mergedResults);
+                        $keywords = implode(' ', $keywordArr); // 保持原始关键词
+                    }
+                }
+
                 $lists = $processor->extractLists($searchResults, 0);
                 $linkList = $lists['links'];
                 $contentList = $lists['contents'];
@@ -80,6 +113,7 @@ class action_plugin_ragasker extends DokuWiki_Action_Plugin {
                     }
                     $searchList .= '</ul>';
                 } else {
+                    $keywords = trim($_POST['keywords']);
                     $searchList = '<span style="color:orange">' . hsc($L('error_noresult')) . '</span>';
                 }
                 $step2msg = "<b>" . hsc(sprintf($L('step_title'), 2, $L('step_searching'))) . "</b><br>"
@@ -113,19 +147,26 @@ class action_plugin_ragasker extends DokuWiki_Action_Plugin {
                     $pageListStr = $L('error_noresult');
                 }
                 $summaryPrompt = $L('summary_prompt') . "\n\n" . sprintf($L('user_question'), $prompt) . "\n\n" . $L('page_list') . "\n" . $pageListStr;
+                $messages = [];
+                if (!empty($_POST['messages'])) {
+                    $messages = json_decode($_POST['messages'], true);
+                }
+                if (empty($messages)) {
+                    $messages[] = ['role' => 'system', 'content' => $L('summary_system')];
+                }
+                $messages[] = ['role' => 'user', 'content' => $summaryPrompt];
                 $requestData2 = [
                     'model' => $model,
-                    'messages' => [
-                        ['role' => 'system', 'content' => $L('summary_system')],
-                        ['role' => 'user', 'content' => $summaryPrompt]
-                    ],
+                    'messages' => $messages,
                     'max_tokens' => $maxTokens,
                     'temperature' => $temperature
                 ];
                 $response2 = $client->chatCompletion($requestData2);
                 $finalAnswer = '';
                 if (isset($response2['choices'][0]['message']['content'])) {
-                    $finalAnswer = $this->formatResponse($response2['choices'][0]['message']['content']);
+                    $answer = $response2['choices'][0]['message']['content'];
+                    $messages[] = ['role' => 'assistant', 'content' => $answer];
+                    $finalAnswer = $this->formatResponse($answer);
                 } else {
                     $finalAnswer = '<span style="color:red">' . hsc($L('error_format')) . '</span>';
                 }
@@ -134,7 +175,11 @@ class action_plugin_ragasker extends DokuWiki_Action_Plugin {
                     $step3msg .= "<details><summary>" . hsc($L('prompt_detail')) . "</summary><pre style='white-space:pre-wrap'>" . hsc($summaryPrompt) . "</pre></details><br>";
                 }
                 $step3msg .= $finalAnswer;
-                $this->sendJson(['ragasker_response' => $step3msg, 'step' => 3]);
+                $this->sendJson([
+                    'ragasker_response' => $step3msg,
+                    'step' => 3,
+                    'messages' => $messages
+                ]);
                 exit;
             }
         }
