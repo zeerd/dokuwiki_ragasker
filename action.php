@@ -55,56 +55,13 @@ class action_plugin_ragasker extends DokuWiki_Action_Plugin {
             // 步骤2：关键词搜索
             if ($step === 2 && !empty($_POST['keywords'])) {
                 $keywords = trim($_POST['keywords']);
-                $highlight = false;
-                $searchResults = ft_pageSearch($keywords, $highlight);
+
                 $processor = new SearchHelper();
-
-                while ((!is_array($searchResults) || count($searchResults) === 0) && strpos($keywords, ' ') !== false) {
-                    $keywordArr = explode(' ', $keywords);
-                    array_pop($keywordArr);
-                    $keywords = trim(implode(' ', $keywordArr));
-                    if ($keywords === '') break;
-                    $searchResults = ft_pageSearch($keywords, $highlight);
-                }
-
-                if ((!is_array($searchResults) || count($searchResults) === 0) && strpos($keywords, ' ') !== false) {
-                    $keywordArr = explode(' ', $keywords);
-                    while (count($keywordArr) > 1) {
-                        array_shift($keywordArr); // 去掉第一个关键词
-                        $keywords = trim(implode(' ', $keywordArr));
-                        if ($keywords === '') break;
-                        $searchResults = ft_pageSearch($keywords, $highlight);
-                        if (is_array($searchResults) && count($searchResults) > 0) break;
-                    }
-                }
-
-                if ((!is_array($searchResults) || count($searchResults) === 0) && strpos($keywords, ' ') !== false) {
-                    $keywordArr = explode(' ', trim($_POST['keywords'])); // 用原始关键词
-                    $mergedResults = [];
-                    foreach ($keywordArr as $singleKeyword) {
-                        $singleKeyword = trim($singleKeyword);
-                        if ($singleKeyword === '') continue;
-                        $result = ft_pageSearch($singleKeyword, $highlight);
-                        if (is_array($result) && count($result) > 0) {
-                            foreach ($result as $item) {
-                                // 用页面ID去重
-                                if (!isset($mergedResults[$item['id']])) {
-                                    $mergedResults[$item['id']] = $item;
-                                }
-                            }
-                        }
-                    }
-                    if (count($mergedResults) > 0) {
-                        $searchResults = array_values($mergedResults);
-                        $keywords = implode(' ', $keywordArr); // 保持原始关键词
-                    }
-                }
-
-                $lists = $processor->extractLists($searchResults, 0);
+                $lists = $processor->search($keywords);
                 $linkList = $lists['links'];
                 $contentList = $lists['contents'];
                 $searchList = '';
-                if (is_array($searchResults) && count($searchResults) > 0) {
+                if (is_array($linkList) && count($linkList) > 0) {
                     $searchList = '<ul>';
                     foreach ($linkList as $idx => $link) {
                         $url = wl($link['id']);
@@ -134,18 +91,23 @@ class action_plugin_ragasker extends DokuWiki_Action_Plugin {
                 $keywords = trim($_POST['keywords']);
                 $linkList = json_decode($_POST['linkList'], true);
                 $contentList = json_decode($_POST['contentList'], true);
-                $pageListStr = '';
+                $pageListArr = [];
+                $idList = [];
+                if (!empty($_POST['idList'])) {
+                    $idList = json_decode($_POST['idList'], true);
+                }
                 if (count($contentList) > 0) {
-                    $pageListArr = [];
                     foreach ($contentList as $idx => $item) {
+                        $id = isset($linkList[$idx]['id']) ? $linkList[$idx]['id'] : '';
+                        if ($id === '' || in_array($id, $idList)) continue;
                         $title = $linkList[$idx]['title'];
                         $summary = $item['summary'];
                         $pageListArr[] = sprintf($L('page_summary'), $title, $summary);
+                        $idList[] = $id;
                     }
-                    $pageListStr = implode("\n", $pageListArr);
-                } else {
-                    $pageListStr = $L('error_noresult');
                 }
+                $pageListStr = count($pageListArr) > 0 ? implode("\n", $pageListArr) : $L('error_noresult');
+                file_put_contents('/tmp/ragasker_debug_request.json', json_encode($pageListStr, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
                 $summaryPrompt = $L('summary_prompt') . "\n\n" . sprintf($L('user_question'), $prompt) . "\n\n" . $L('page_list') . "\n" . $pageListStr;
                 $messages = [];
                 if (!empty($_POST['messages'])) {
@@ -161,6 +123,10 @@ class action_plugin_ragasker extends DokuWiki_Action_Plugin {
                     'max_tokens' => $maxTokens,
                     'temperature' => $temperature
                 ];
+                $step3msg = "<b>" . hsc(sprintf($L('step_title'), 3, $L('step_summarizing'))) . "</b><br>";
+                if ($this->getConf('verbose')) {
+                    $step3msg .= "<details><summary>" . hsc($L('prompt_detail')) . "</summary><pre style='white-space:pre-wrap'>" . hsc($summaryPrompt) . "</pre></details><br>";
+                }
                 $response2 = $client->chatCompletion($requestData2);
                 $finalAnswer = '';
                 if (isset($response2['choices'][0]['message']['content'])) {
@@ -170,15 +136,12 @@ class action_plugin_ragasker extends DokuWiki_Action_Plugin {
                 } else {
                     $finalAnswer = '<span style="color:red">' . hsc($L('error_format')) . '</span>';
                 }
-                $step3msg = "<b>" . hsc(sprintf($L('step_title'), 3, $L('step_summarizing'))) . "</b><br>";
-                if ($this->getConf('verbose')) {
-                    $step3msg .= "<details><summary>" . hsc($L('prompt_detail')) . "</summary><pre style='white-space:pre-wrap'>" . hsc($summaryPrompt) . "</pre></details><br>";
-                }
                 $step3msg .= $finalAnswer;
                 $this->sendJson([
                     'ragasker_response' => $step3msg,
                     'step' => 3,
-                    'messages' => $messages
+                    'messages' => $messages,
+                    'idList' => $idList
                 ]);
                 exit;
             }

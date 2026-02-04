@@ -1,7 +1,7 @@
 <?php
 
 $lang['no_apikey'] = '请先在插件配置中设置 OpenAI API 密钥';
-$lang['keyword_prompt'] = '请从以下问题中提取3-5个最重要的关键词，返回一个用空格分隔的关键词列表，以优先度排列，不要解释：';
+$lang['keyword_prompt'] = '请从以下问题中提取3-5个最重要的关键词，请进行细粒度分词，确保缩写词独立成词。返回一个用空格分隔的关键词列表，以优先度排列，不要解释：';
 $lang['keyword_system'] = '你是一个关键词提取助手。';
 $lang['summary_prompt'] = '请根据以下页面列表，结合用户原始问题，简要总结并回答用户的问题。';
 $lang['summary_system'] = '你是一个dokuwiki知识库问答助手。';

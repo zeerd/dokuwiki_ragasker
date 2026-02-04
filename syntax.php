@@ -16,7 +16,7 @@ class syntax_plugin_ragasker extends DokuWiki_Syntax_Plugin {
     public function handle($match, $state, $pos, Doku_Handler $handler) {
         // 只传递唯一ID用于渲染
         $uniqid = uniqid('ragasker_', true);
-        if (preg_match('/~~RAGASKER:Search:([A-Za-z0-9_]+)~~/', $match, $m)) {
+        if (preg_match('/~~RAGASKER:Search:([\x{4e00}-\x{9fa5}A-Za-z0-9_ ]+)~~/u', $match, $m)) {
             // 解析参数
             $param = $m[1];
             return [$uniqid, 'searcher', $param];
@@ -36,7 +36,7 @@ class syntax_plugin_ragasker extends DokuWiki_Syntax_Plugin {
 
     private function renderSearcher($renderer, $param) {
         $processor = new SearchHelper();
-        $lists = $processor->exampleUsage($param);
+        $lists = $processor->search($param);
         $linkList = $lists['links'];
         $contentList = $lists['contents'];
         $searchList = '';
@@ -183,11 +183,15 @@ class syntax_plugin_ragasker extends DokuWiki_Syntax_Plugin {
                         "&step=3&keywords=" + encodeURIComponent(lastKeywords) +
                         "&linkList=" + encodeURIComponent(lastLinkList) +
                         "&contentList=" + encodeURIComponent(lastContentList) +
-                        "&messages=" + encodeURIComponent(window.ragasker_lastMessages ? JSON.stringify(window.ragasker_lastMessages) : "[]"),
+                        "&messages=" + encodeURIComponent(window.ragasker_lastMessages ? JSON.stringify(window.ragasker_lastMessages) : "[]") +
+                        "&idList=" + encodeURIComponent(window.ragasker_lastIdList ? JSON.stringify(window.ragasker_lastIdList) : "[]"),
                     onSuccess: function(resp) {
                         appendHtml("<hr>" + resp.ragasker_response);
                         if(resp.messages) {
                             window.ragasker_lastMessages = resp.messages;
+                        }
+                        if(resp.idList) {
+                            window.ragasker_lastIdList = resp.idList;
                         }
                     }
                 });

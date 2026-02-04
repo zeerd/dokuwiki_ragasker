@@ -97,15 +97,60 @@ class SearchHelper {
     /**
      * 使用示例
      */
-    public function exampleUsage($searchQuery) {
-        // 1. 执行搜索
+    public function search($searchQuery) {
+        $keywords = trim($searchQuery);
         $highlight = false;
-        $rawResults = ft_pageSearch($searchQuery, $highlight);
+        $searchResults = ft_pageSearch($keywords, $highlight);
 
-        // 2. 提取两个列表
-        $lists = $this->extractLists($rawResults);
+        while ((!is_array($searchResults) || count($searchResults) === 0) && strpos($searchQuery, ' ') !== false) {
+            $keywordArr = explode(' ', $keywords);
+            array_pop($keywordArr);
+            $keywords = trim(implode(' ', $keywordArr));
+            if ($keywords === '') break;
+            $searchResults = ft_pageSearch($keywords, $highlight);
+        }
 
-        // 3. 返回结果
+        if ((!is_array($searchResults) || count($searchResults) === 0) && strpos($searchQuery, ' ') !== false) {
+            $keywordArr = explode(' ', $searchQuery);
+            while (count($keywordArr) > 1) {
+                array_shift($keywordArr); // 去掉第一个关键词
+                $keywords = trim(implode(' ', $keywordArr));
+                if ($keywords === '') break;
+                $searchResults = ft_pageSearch($keywords, $highlight);
+                if (is_array($searchResults) && count($searchResults) > 0) break;
+            }
+        }
+
+        if ((!is_array($searchResults) || count($searchResults) === 0) && strpos($searchQuery, ' ') !== false) {
+            $keywordArr = explode(' ', trim($searchQuery)); // 用原始关键词
+            $mergedResults = [];
+            foreach ($keywordArr as $singleKeyword) {
+                $singleKeyword = trim($singleKeyword);
+                if ($singleKeyword === '') continue;
+                $result = ft_pageSearch($singleKeyword, $highlight);
+                if (is_array($result) && count($result) > 0) {
+                    foreach ($result as $key => $score) {
+                        // 用页面ID去重
+                        if (is_array($score) && isset($score['score'])) {
+                            $scoreValue = $score['score'];
+                        } elseif (is_numeric($score)) {
+                            $scoreValue = $score;
+                        } else {
+                            $scoreValue = 0;
+                        }
+                        if (!isset($mergedResults[$key])) {
+                            $mergedResults[$key] = $scoreValue;
+                        }
+                    }
+                }
+            }
+            if (count($mergedResults) > 0) {
+                $searchResults = $mergedResults;
+                $keywords = implode(' ', $keywordArr); // 保持原始关键词
+            }
+        }
+
+        $lists = $this->extractLists($searchResults, 0);
         return $lists;
     }
 }
